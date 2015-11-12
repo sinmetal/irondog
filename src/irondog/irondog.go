@@ -44,7 +44,14 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := urlfetch.Client(ctx)
-	resp, err := client.Post("https://api.github.com/markdown", "application/json", bytes.NewReader(paramBytes))
+	req, err := http.NewRequest("POST", "https://api.github.com/markdown", bytes.NewReader(paramBytes))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("token %s", "{your token}"))
+	resp, err := client.Do(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
