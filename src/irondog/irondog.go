@@ -3,12 +3,13 @@ package irondog
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
+	"text/template"
 
 	"google.golang.org/appengine"
-	"google.golang.org/appengine/log"
 	"google.golang.org/appengine/urlfetch"
 )
 
@@ -25,21 +26,14 @@ func init() {
 func handler(w http.ResponseWriter, r *http.Request) {
 	ctx := appengine.NewContext(r)
 
-	fp, err := os.Open("md/sample.md")
+	md, err := readMarkdownFile(r.URL.Path[1:len(r.URL.Path)])
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer fp.Close()
-
-	b, err := ioutil.ReadAll(fp)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
 	param := MarkdownPostParam{
-		Text:    string(b),
+		Text:    string(md),
 		Mode:    "gfm",
 		Context: "github/gollum",
 	}
@@ -62,9 +56,58 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	_, err = w.Write(body)
+	header, err := readHtmlFile("header")
 	if err != nil {
-		log.Errorf(ctx, "reponse write error = %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
+
+	footer, err := readHtmlFile("footer")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	data := struct {
+		Header  string
+		Content string
+		Footer  string
+	}{
+		Header:  string(header),
+		Content: string(body),
+		Footer:  string(footer),
+	}
+
+	mainTempl, err := template.ParseFiles("html/main.html")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html;charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	err = mainTempl.Execute(w, data)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func readHtmlFile(path string) ([]byte, error) {
+	fp, err := os.Open(fmt.Sprintf("html/%s.html", path))
+	if err != nil {
+		return nil, err
+	}
+	defer fp.Close()
+
+	return ioutil.ReadAll(fp)
+}
+
+func readMarkdownFile(path string) ([]byte, error) {
+	fp, err := os.Open(fmt.Sprintf("md/%s.md", path))
+	if err != nil {
+		return nil, err
+	}
+	defer fp.Close()
+
+	return ioutil.ReadAll(fp)
 }
